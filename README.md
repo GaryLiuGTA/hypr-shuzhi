@@ -2,7 +2,7 @@
 
 Generate wallpapers featuring Chinese poetry (from jinrishici API) for Arch + Hyprland (Omarchy).
 This is port from https://github.com/tuberry/shuzhi, using Claude Code to migrate to Hyprland in less than 15 min.
-
+![shuzhi](screenshots/hypr-shuzhi-3.png)
 ## Run
 
 ```bash
