@@ -78,8 +78,14 @@ function setWallpaper(pngPath) {
   }
 }
 
+function resolveTheme(config) {
+  let theme = config.theme ?? (config.dark != null ? (config.dark ? 'dark' : 'light') : 'dark');
+  if (theme === 'random') return Math.random() < 0.5;
+  return theme === 'dark';
+}
+
 function generate(config) {
-  let dark = config.dark ?? true;
+  let dark = resolveTheme(config);
   let level = config.level ?? true; // true = horizontal, false = vertical
   let fontName = config.font || 'Serif';
   let fontSize = config.fontSize ?? 36;
@@ -132,7 +138,7 @@ function generate(config) {
 
 function parseArgs() {
   let config = {
-    dark: true,
+    theme: 'random',
     level: true,
     sketch: 'random',
     font: 'Serif',
@@ -154,8 +160,9 @@ function parseArgs() {
   // Parse CLI args
   for (let i = 0; i < ARGV.length; i++) {
     switch (ARGV[i]) {
-      case '--light': config.dark = false; break;
-      case '--dark': config.dark = true; break;
+      case '--light': config.theme = 'light'; break;
+      case '--dark': config.theme = 'dark'; break;
+      case '--random': config.theme = 'random'; break;
       case '--vertical': config.level = false; break;
       case '--horizontal': config.level = true; break;
       case '--no-set': config.setWallpaper = false; break;
@@ -177,6 +184,7 @@ Usage: gjs -m src/main.js [OPTIONS]
 Options:
   --dark           Dark theme (default)
   --light          Light theme
+  --random         Randomly select dark or light theme
   --horizontal     Horizontal text layout (default)
   --vertical       Vertical text layout
   --sketch TYPE    Sketch type: wave, blob, oval, tree, cloud, random (default)
