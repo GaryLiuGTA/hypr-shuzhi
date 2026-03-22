@@ -424,15 +424,136 @@ export const Tree = {
 };
 
 const Markup = {
+  _supportsVertical: (cr, font) => {
+    let t = PangoCairo.create_layout(cr);
+    t.get_context().set_base_gravity(Pango.Gravity.EAST);
+    t.set_font_description(font);
+    t.set_text('字', -1);
+    return t.get_pixel_size()[0] > 0;
+  },
+  _fallback: (cr, font, text) => {
+    // For fonts without vertical metrics: render each character individually.
+    let [, , plainText] = Pango.parse_markup(text, -1, '\0');
+
+    // Simple text without \n (e.g., seal "贺铸"): insert \n between chars in the
+    // original markup to preserve attributes (size, bgcolor, fgcolor) and use a
+    // single PangoLayout. This ensures correct glyph winding for the seal cutout.
+    if (!plainText.includes('\n')) {
+      let newMarkup = text.replace(plainText, [...plainText].join('\n'));
+      let pl = PangoCairo.create_layout(cr);
+      pl.set_font_description(font);
+      pl.set_markup(newMarkup, -1);
+      pl.set_alignment(Pango.Alignment.CENTER);
+      let [w, h] = pl.get_pixel_size();
+      return {
+        _fallback: true, _singleLayout: pl,
+        get_pixel_size: () => [h, w],
+        get_text: () => plainText,
+        get_line_count: () => 1,
+        index_to_pos: () => ({ x: h * Pango.SCALE, y: w * Pango.SCALE, width: 0, height: 0 }),
+      };
+    }
+
+    // Multi-line text (poem body + title): render each column character-by-character.
+    let m = PangoCairo.create_layout(cr);
+    m.set_font_description(font);
+    m.set_text('字', -1);
+    let [charW, charH] = m.get_pixel_size();
+    let colW = Math.round(charW * 1.4);
+
+    let lines = plainText.split('\n'), cols = [], inTitle = false;
+    for (let line of lines) {
+      if (line.length === 0) { inTitle = true; continue; }
+      cols.push({ chars: [...line], title: inTitle });
+    }
+
+    let titleScale = 0.45;
+    let maxLen = Math.max(...cols.map(c => c.chars.length));
+    let totalH = Math.round(maxLen * charH);
+    let totalW = Math.round(cols.reduce((s, c) => s + (c.title ? colW * titleScale : colW), 0));
+
+    return {
+      _fallback: true, _cols: cols, _font: font,
+      _charW: charW, _charH: charH, _colW: colW, _titleScale: titleScale,
+      get_pixel_size: () => [totalH, totalW],
+      get_text: () => plainText,
+      get_line_count: () => cols.length,
+      index_to_pos: () => {
+        // Position seal directly under the title (last) column
+        let last = cols.at(-1);
+        let lastH = Math.round(last.chars.length * (last.title ? charH * titleScale : charH));
+        let bodyW = Math.round(cols.filter(c => !c.title).reduce((s) => s + colW, 0));
+        let halfW = Math.round(charW * titleScale / 2);
+        let halfH = Math.round(charH * titleScale / 2);
+        return { x: (lastH + halfH) * Pango.SCALE, y: (bodyW + halfW) * Pango.SCALE, width: 0, height: 0 };
+      },
+    };
+  },
   gen: (cr, font, text, level) => {
+    if (!level && !Markup._supportsVertical(cr, font))
+      return Markup._fallback(cr, font, text);
+
     let pl = PangoCairo.create_layout(cr);
-    if (level) pl.set_alignment(Pango.Alignment.CENTER);
-    else pl.get_context().set_base_gravity(Pango.Gravity.EAST);
+    if (level) {
+      pl.set_alignment(Pango.Alignment.CENTER);
+    } else {
+      pl.get_context().set_base_gravity(Pango.Gravity.EAST);
+    }
     pl.set_font_description(font);
     pl.set_markup(text, -1);
+    if (!level && pl.get_line_count() > 1) {
+      // Ensure column spacing is at least 1em for fonts with tight line height.
+      let [, h] = pl.get_pixel_size();
+      let avgLineH = h / pl.get_line_count();
+      let emPx = font.get_size() / Pango.SCALE * 4 / 3;
+      if (avgLineH < emPx)
+        pl.set_spacing(Math.round((emPx - avgLineH) * Pango.SCALE));
+    }
     return pl;
   },
   draw: (cr, pl, x, y, level, color) => {
+    if (pl?._fallback && pl._singleLayout) {
+      // Single-layout fallback (seal text): render without rotation.
+      // Shift left by visual width so text aligns with Seal.link rectangle.
+      let [, h] = pl.get_pixel_size();
+      cr.moveTo(x - h, y);
+      if (color) {
+        cr.setSourceRGBA(...color);
+        PangoCairo.show_layout(cr, pl._singleLayout);
+      } else {
+        PangoCairo.layout_path(cr, pl._singleLayout);
+      }
+      return;
+    }
+    if (pl?._fallback) {
+      let { _cols: cols, _font: font, _charH: ch, _colW: cw, _titleScale: ts } = pl;
+      let dx = 0;
+      for (let col of cols) {
+        let scale = col.title ? ts : 1;
+        let w = cw * scale, h = ch * scale;
+        let f = font;
+        if (col.title) { f = font.copy(); f.set_size(Math.round(font.get_size() * ts)); }
+        col.chars.forEach((c, i) => {
+          let cp = PangoCairo.create_layout(cr);
+          cp.set_font_description(f);
+          cp.set_text(c, -1);
+          cr.moveTo(x - dx - w, y + i * h);
+          if (color) {
+            // show_layout: use save/restore to isolate color state
+            draw(() => {
+              cr.moveTo(x - dx - w, y + i * h);
+              cr.setSourceRGBA(...color);
+              PangoCairo.show_layout(cr, cp);
+            }, cr);
+          } else {
+            // layout_path: do NOT save/restore — paths must accumulate for seal cutout
+            PangoCairo.layout_path(cr, cp);
+          }
+        });
+        dx += w;
+      }
+      return;
+    }
     cr.moveTo(x, y);
     if (!level) cr.rotate(Math.PI / 2);
     if (color) {
@@ -476,8 +597,8 @@ const Seal = {
   draw: (cr, pts) => {
     if (!pts) return;
     let [ps, x, y, level, color] = pts;
-    paint(Markup, cr, ps, x, y, level);
     let [w, h] = ps.get_pixel_size();
+    paint(Markup, cr, ps, x, y, level);
     Seal.link(cr, ...level ? [x, y, w, h] : [x - h, y, h, w]);
     cr.setSourceRGB(...color);
     cr.fill();

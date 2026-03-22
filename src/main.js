@@ -87,7 +87,8 @@ function resolveTheme(config) {
 function generate(config) {
   let dark = resolveTheme(config);
   let level = config.level ?? true; // true = horizontal, false = vertical
-  let fontName = config.font || 'Serif';
+  let fonts = config.font;
+  let fontName = Array.isArray(fonts) ? T.lot(fonts) : (fonts || 'Serif');
   let fontSize = config.fontSize ?? 36;
   let sketchName = config.sketch || 'random';
   let showColor = config.showColor ?? false;
@@ -141,7 +142,7 @@ function parseArgs() {
     theme: 'random',
     level: true,
     sketch: 'random',
-    font: 'Serif',
+    font: ['Serif'],
     fontSize: 36,
     showColor: false,
     setWallpaper: true,
@@ -188,7 +189,7 @@ Options:
   --horizontal     Horizontal text layout (default)
   --vertical       Vertical text layout
   --sketch TYPE    Sketch type: wave, blob, oval, tree, cloud, random (default)
-  --font FONT      Font family name (default: "Serif")
+  --font FONT      Font family name (overrides config list)
   --font-size N    Font size in points (default: 36)
   --show-color     Show color name on Wave sketch
   --no-set         Generate only, don't set wallpaper

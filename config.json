@@ -1,9 +1,9 @@
 {
-    "dark": true,
+    "theme": "random",
     "level": false,
     "sketch": "random",
-    "font": "Serif",
     "fontSize": 48,
+    "font": ["Serif"],
     "showColor": false,
     "setWallpaper": true
 }
