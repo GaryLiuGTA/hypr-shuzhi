@@ -22,15 +22,19 @@ const DARK_SKETCHES = [Sketch.WAVE, Sketch.BLOB, Sketch.OVAL, Sketch.CLOUD];
 const LIGHT_SKETCHES = [Sketch.WAVE, Sketch.BLOB, Sketch.OVAL, Sketch.TREE];
 
 function getMonitorSize() {
-  try {
-    let json = T.execute('hyprctl monitors -j');
-    let monitors = JSON.parse(json);
-    let m = monitors.reduce((p, x) => p.width * p.height > x.width * x.height ? p : x, { width: 1920, height: 1080 });
-    return { W: m.width, H: m.height };
-  } catch (e) {
-    logError(e, 'Failed to detect monitor size');
-    return { W: 1920, H: 1080 };
+  // Retry a few times — after boot, Hyprland may not have configured monitors yet
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      let json = T.execute('hyprctl monitors -j');
+      let monitors = JSON.parse(json);
+      let m = monitors.reduce((p, x) => p.width * p.height > x.width * x.height ? p : x, { width: 0, height: 0 });
+      if (m.width > 0 && m.height > 0) return { W: m.width, H: m.height };
+    } catch (e) {
+      if (attempt === 4) logError(e, 'Failed to detect monitor size');
+    }
+    if (attempt < 4) GLib.usleep(2000000); // wait 2s before retry
   }
+  return { W: 1920, H: 1080 };
 }
 
 function pickSketch(dark, sketchName) {

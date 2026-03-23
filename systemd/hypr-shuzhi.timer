@@ -2,7 +2,7 @@
 Description=Refresh wallpaper with new poetry on schedule
 
 [Timer]
-OnBootSec=30s
+OnBootSec=60s
 OnUnitActiveSec=30min
 RandomizedDelaySec=60s
 
