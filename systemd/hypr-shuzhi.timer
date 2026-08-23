@@ -3,7 +3,7 @@ Description=Refresh wallpaper with new poetry on schedule
 
 [Timer]
 OnBootSec=60s
-OnUnitActiveSec=30min
+OnUnitActiveSec=@UPDATE_INTERVAL@min
 RandomizedDelaySec=60s
 
 [Install]

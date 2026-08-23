@@ -56,15 +56,39 @@ function getSketchModule(idx, dark) {
   }
 }
 
+function hasOmarchyShell() {
+  // omarchy-shell (Quickshell) renders backgrounds on Omarchy >= 4.0; older
+  // versions restart swaybg instead. The state dir move to ~/.local/state
+  // happened in an earlier, unrelated migration, so its presence isn't a
+  // reliable version signal here — check for the binary we'd actually invoke.
+  return GLib.find_program_in_path('omarchy-shell') !== null;
+}
+
+function getOmarchyStateDir() {
+  // Omarchy moved runtime state from ~/.config/omarchy to ~/.local/state/omarchy
+  let newBase = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'state', 'omarchy']);
+  if (GLib.file_test(newBase, GLib.FileTest.IS_DIR)) return newBase;
+  return GLib.build_filenamev([GLib.get_home_dir(), '.config', 'omarchy']);
+}
+
 function setWallpaper(pngPath) {
-  let bgLink = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'omarchy', 'current', 'background']);
+  let bgLink = GLib.build_filenamev([getOmarchyStateDir(), 'current', 'background']);
 
   // Remove existing symlink/file and create new symlink
   let linkFile = Gio.File.new_for_path(bgLink);
   try { linkFile.delete(null); } catch (e) { /* ok */ }
   linkFile.make_symbolic_link(pngPath, null);
 
-  // Restart swaybg via hyprctl so it runs under the compositor
+  if (hasOmarchyShell()) {
+    // Omarchy >= 4.0 renders the background via the omarchy-shell (Quickshell), not swaybg.
+    // The shell's background plugin also polls the symlink, but nudging it via IPC avoids the visible delay.
+    try {
+      T.execute(`omarchy-shell -q background set ${GLib.shell_quote(pngPath)}`);
+    } catch (e) { /* ok if the shell isn't running */ }
+    return;
+  }
+
+  // Omarchy < 4.0: restart swaybg via hyprctl so it runs under the compositor
   try {
     T.execute('pkill -x swaybg || true');
   } catch (e) { /* ok if swaybg isn't running */ }

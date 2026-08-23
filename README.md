@@ -22,6 +22,14 @@ bash install.sh
 systemctl --user enable --now hypr-shuzhi.timer   # refresh every 30min
 ```
 
+The refresh interval comes from `updateInterval` in `config.json` (minutes, default `30`). Set it to a
+negative number and re-run `install.sh` to disable scheduling entirely — the timer unit is removed instead
+of installed. With scheduling disabled, refresh the wallpaper manually with:
+
+```bash
+gjs -m ~/.local/share/hypr-shuzhi/src/main.js
+```
+
 ## Architecture
 
 Standalone GJS application. Ported from tuberry/shuzhi GNOME Shell extension.
@@ -44,7 +52,7 @@ main.js    — Entry point, CLI, wallpaper setting (swaybg + hyprctl)
 3. Create Cairo ImageSurface at native resolution
 4. Paint background → layout motto (Pango) → generate+draw sketch (Cairo) → draw motto
 5. Write PNG to `~/.cache/hypr-shuzhi/wallpaper-{dark|light}.png`
-6. Update symlink `~/.config/omarchy/current/background` → restart swaybg
+6. Update symlink `current/background` (`~/.local/state/omarchy` on Omarchy ≥4.0, `~/.config/omarchy` before that) → notify `omarchy-shell` on ≥4.0, or restart `swaybg` on older versions
 
 ### Sketch Types (draw.js)
 
@@ -60,7 +68,8 @@ main.js    — Entry point, CLI, wallpaper setting (swaybg + hyprctl)
 
 - `gjs` (GNOME JavaScript) with GI bindings: Cairo, Pango, PangoCairo, Soup3
 - `hyprctl` for monitor detection and process dispatch
-- `swaybg` for wallpaper display
+- `omarchy-shell` for wallpaper display on Omarchy ≥4.0, or `swaybg` on older versions
+- `jq` for reading `config.json` during install
 - CJK fonts (e.g., noto-fonts-cjk)
 
 ### Courtesy
