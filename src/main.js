@@ -56,18 +56,14 @@ function getSketchModule(idx, dark) {
   }
 }
 
-function hasOmarchyShell() {
-  // omarchy-shell (Quickshell) renders backgrounds on Omarchy >= 4.0; older
-  // versions restart swaybg instead. The state dir move to ~/.local/state
-  // happened in an earlier, unrelated migration, so its presence isn't a
-  // reliable version signal here — check for the binary we'd actually invoke.
-  return GLib.find_program_in_path('omarchy-shell') !== null;
-}
-
 function getOmarchyStateDir() {
-  // Omarchy moved runtime state from ~/.config/omarchy to ~/.local/state/omarchy
+  // Omarchy moved the theme/background "current" state from ~/.config/omarchy to
+  // ~/.local/state/omarchy. Check for the "current" subdir itself, not just the
+  // parent omarchy dir — older installs can already have ~/.local/state/omarchy
+  // (e.g. for migrations/toggles bookkeeping) without "current" having moved there.
   let newBase = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'state', 'omarchy']);
-  if (GLib.file_test(newBase, GLib.FileTest.IS_DIR)) return newBase;
+  let newCurrent = GLib.build_filenamev([newBase, 'current']);
+  if (GLib.file_test(newCurrent, GLib.FileTest.IS_DIR)) return newBase;
   return GLib.build_filenamev([GLib.get_home_dir(), '.config', 'omarchy']);
 }
 
@@ -79,14 +75,14 @@ function setWallpaper(pngPath) {
   try { linkFile.delete(null); } catch (e) { /* ok */ }
   linkFile.make_symbolic_link(pngPath, null);
 
-  if (hasOmarchyShell()) {
-    // Omarchy >= 4.0 renders the background via the omarchy-shell (Quickshell), not swaybg.
-    // The shell's background plugin also polls the symlink, but nudging it via IPC avoids the visible delay.
-    try {
-      T.execute(`omarchy-shell -q background set ${GLib.shell_quote(pngPath)}`);
-    } catch (e) { /* ok if the shell isn't running */ }
+  // Omarchy >= 4.0 renders the background via the omarchy-shell (Quickshell), not swaybg.
+  // The shell's background plugin also polls the symlink, but nudging it via IPC avoids the
+  // visible delay. Invoked via absolute path since keybind-triggered execs run under Hyprland's
+  // own $PATH, which doesn't include /usr/share/omarchy/bin.
+  try {
+    T.execute(`/usr/bin/omarchy-shell -q background set ${GLib.shell_quote(pngPath)}`);
     return;
-  }
+  } catch (e) { /* fall through to swaybg on older Omarchy or if the shell isn't running */ }
 
   // Omarchy < 4.0: restart swaybg via hyprctl so it runs under the compositor
   try {
@@ -128,7 +124,7 @@ function generate(config) {
   if (fontSize) font.set_size(fontSize * Pango.SCALE);
 
   // Fetch motto
-  let motto = Motto.fetch(dark);
+  let motto = Motto.fetch();
 
   // Create PNG surface
   let surface = new Cairo.ImageSurface(Cairo.Format.ARGB32, W, H);
@@ -157,9 +153,29 @@ function generate(config) {
   // 5. Write PNG
   let cacheDir = GLib.build_filenamev([GLib.get_home_dir(), '.cache', 'hypr-shuzhi']);
   T.ensureDir(cacheDir);
-  let pngPath = GLib.build_filenamev([cacheDir, `wallpaper-${dark ? 'dark' : 'light'}.png`]);
+  let prefix = `wallpaper-${dark ? 'dark' : 'light'}`;
+  let pngPath = GLib.build_filenamev([cacheDir, `${prefix}-${Date.now()}.png`]);
   surface.writeToPNG(pngPath);
   cr.$dispose();
+
+  // Each generation needs a distinct filename: the Omarchy background plugin
+  // dedupes "set" requests by exact path, so reusing the same path for a
+  // regenerated image would make the switch silently no-op. Prune the old
+  // ones for this mode now that the new file is written. Skip this with
+  // --no-set: the currently active wallpaper may share this prefix, and
+  // deleting it out from under the "current/background" symlink leaves a
+  // dangling link (black background) even though we never touched it.
+  if (config.setWallpaper) {
+    let dir = Gio.File.new_for_path(cacheDir);
+    let enumerator = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+    let info;
+    while ((info = enumerator.next_file(null))) {
+      let name = info.get_name();
+      if (name.startsWith(prefix) && name !== GLib.path_get_basename(pngPath)) {
+        GLib.unlink(GLib.build_filenamev([cacheDir, name]));
+      }
+    }
+  }
 
   print(`Generated: ${pngPath} (${W}x${H})`);
   return pngPath;

@@ -482,10 +482,13 @@ const Markup = {
         // Position seal directly under the title (last) column
         let last = cols.at(-1);
         let lastH = Math.round(last.chars.length * (last.title ? charH * titleScale : charH));
-        let bodyW = Math.round(cols.filter(c => !c.title).reduce((s) => s + colW, 0));
+        // Width of every column BEFORE the last one — not just non-title columns.
+        // When the title wraps into more than one column, an earlier title column
+        // must count here too, or the seal lands on top of it instead of past it.
+        let precedingW = Math.round(cols.slice(0, -1).reduce((s, c) => s + (c.title ? colW * titleScale : colW), 0));
         let halfW = Math.round(charW * titleScale / 2);
         let halfH = Math.round(charH * titleScale / 2);
-        return { x: (lastH + halfH) * Pango.SCALE, y: (bodyW + halfW) * Pango.SCALE, width: 0, height: 0 };
+        return { x: (lastH + halfH) * Pango.SCALE, y: (precedingW + halfW) * Pango.SCALE, width: 0, height: 0 };
       },
     };
   },
@@ -598,10 +601,13 @@ const Seal = {
     if (!pts) return;
     let [ps, x, y, level, color] = pts;
     let [w, h] = ps.get_pixel_size();
-    paint(Markup, cr, ps, x, y, level);
     Seal.link(cr, ...level ? [x, y, w, h] : [x - h, y, h, w]);
     cr.setSourceRGB(...color);
     cr.fill();
+    // White text on top of the stamp, rather than knocking the glyphs out of
+    // it: a knockout reveals whatever's behind the seal, which is the page
+    // background — unreadable in dark theme where that's near-black too.
+    paint(Markup, cr, ps, x, y, level, [1, 1, 1, 1]);
   },
 };
 
